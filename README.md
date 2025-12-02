@@ -64,7 +64,7 @@ Each experiment folder contains detailed README files with specific setup instru
 
 ---
 
-### 2. **Occlusion-based Interpretability/**
+### 2. **Occlusion-based-Interpretability/**
 Contains the **original contribution** of this thesis: a complete pipeline for occlusion-based interpretability analysis of MAD models.
 
 **Core Components:**
@@ -106,7 +106,7 @@ Creates visual heatmaps that highlight which facial regions influence the model'
 3. **Predict** → Pass images through MAD model to produce prediction scores
 4. **Visualize** → Use `occlusion_heatmaps_builder.py` to create interpretability heatmaps
 
-[📖 View Occlusion-based Interpretability README](Occlusion-based%20Interpretability/README.md)
+[📖 View Occlusion-based Interpretability README](Occlusion-based-Interpretability/README.md)
 
 ---
 
@@ -198,7 +198,7 @@ The thesis employs comprehensive evaluation metrics:
    - Most experiments are designed for Google Colab execution
 
 3. **Use Methodology Tools**
-   - Navigate to `Occlusion-based Interpretability/` folder
+   - Navigate to `Occlusion-based-Interpretability/` folder
    - Install dependencies:
      ```bash
      pip install numpy opencv-python dlib matplotlib tqdm tensorflow mtcnn pillow
