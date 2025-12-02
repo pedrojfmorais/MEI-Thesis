@@ -106,7 +106,7 @@ Creates visual heatmaps that highlight which facial regions influence the model'
 3. **Predict** → Pass images through MAD model to produce prediction scores
 4. **Visualize** → Use `occlusion_heatmaps_builder.py` to create interpretability heatmaps
 
-[📖 View Methodology README](Occlusion-based Interpretability/README.md)
+[📖 View Occlusion-based Interpretability README](Occlusion-based%20Interpretability/README.md)
 
 ---
 
