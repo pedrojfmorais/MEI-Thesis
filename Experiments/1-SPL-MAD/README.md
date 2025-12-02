@@ -31,7 +31,7 @@ Performs error rate analysis on experimental results from the SPL-MAD pipeline, 
 - **Setup**:
   - Mounts Google Drive and locates experiment log files.
 - **Log Analysis**:
-  - Executes the script `analyse_logs.py` to parse EER results and summarize performance across datasets.
+  - Executes the script `analyze_logs.py` to parse EER results and summarize performance across datasets.
   - Processes multiple datasets and morphing methods, including **AMSL**, **FaceMorpher**, **OpenCV**, **StyleGAN**, and **WebMorph**.
 - **Evaluation**:
   - Aggregates and compares error metrics from tests on **SMDD** and **FRLL-Morphs** datasets.
@@ -53,8 +53,9 @@ Performs error rate analysis on experimental results from the SPL-MAD pipeline, 
 ## 🧩 Additional Notes
 - Designed for execution in **Google Colab** environments.
 - Requires project-specific scripts such as:
-  - `/MyDrive/mad/code/SPL-MAD/EER Analysis/analyse_logs.py`
+  - `/MyDrive/mad/code/SPL-MAD/EER Analysis/analyze_logs.py`
   - `/MyDrive/mad/datasets/scripts/frll_morphs_create_csv.py`
 - Ensure that dataset paths and filenames are correctly configured before running.
+
 
 
