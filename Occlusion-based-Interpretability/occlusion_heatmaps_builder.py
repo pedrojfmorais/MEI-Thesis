@@ -1006,6 +1006,8 @@ def generate_average_heatmaps(
             title="Average Landmark Occlusion Heatmap",
         )
 
+    # Generate combined heatmap only if we have both grid and landmark scores
+    if avg_grid_scores and avg_landmark_scores:
         combined_M = combine_grid_and_landmarks(grid_M_occluded, landmark_M_occluded)
         combined_M = adjust_matrix_to_heatmap_mode(combined_M, avg_regular_score, heatmap_mode)
 
@@ -1088,9 +1090,9 @@ def process_one_image(
             img_bgr, landmark_scores_map, shape_predictor, grid_size=(rows*refinement, cols*refinement)
         )
         landmark_M = adjust_matrix_to_heatmap_mode(
-            landmark_M_occluded, 
-            regular_score, 
-            heatmap_mode, 
+            landmark_M_occluded,
+            regular_score,
+            heatmap_mode,
             mask=(landmark_M_occluded != 0)
         )
 
@@ -1101,6 +1103,8 @@ def process_one_image(
             title="Landmark Occlusion Heatmap",
         )
 
+    # Generate combined heatmap only if we have both grid and landmark scores
+    if grid_scores_map and landmark_scores_map:
         combined_M = combine_grid_and_landmarks(grid_M_occluded, landmark_M_occluded)
         combined_M = adjust_matrix_to_heatmap_mode(combined_M, regular_score, heatmap_mode)
 
