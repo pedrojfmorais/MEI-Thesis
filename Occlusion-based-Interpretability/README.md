@@ -189,13 +189,16 @@ The script matches `bonafide/subject001/image.png` across all three files to ass
 | `--landmark`              | Path                                          | No      | —              | Path to landmark occlusion score file.                                                                              |
 | `--output`                | Path                                          | Yes     | —              | Output folder where overlay images will be saved.                                                                  |
 | `--heatmap-mode`          | Choice: `occluded` \| `diff`                 | No      | `occluded`     | How to fill each cell:<br>• `occluded`: show raw occlusion score<br>• `diff`: show absolute difference from baseline |
+| `--generated-heatmaps`    | Choice: `individual` \| `average`            | No      | `individual`   | Heatmap generation mode:<br>• `individual`: generate one heatmap per image<br>• `average`: generate a single averaged heatmap across all images |
 | `--alpha`                 | Float                                         | No      | 0.6            | Transparency of the heatmap overlay.                                                                               |
 | `--colormap`              | String                                        | No      | `hot`          | Matplotlib colormap name.                                                                                           |
 | `--multiprocessing`       | Flag                                          | No      | Disabled       | Enable multiprocessing for faster processing.                                                                      |
 | `--workers`               | Integer                                       | No      | 8              | Number of worker processes when multiprocessing is enabled.                                                        |
 | `--log-level`             | String                                        | No      | `INFO`         | Logging level (`DEBUG`, `INFO`, `WARNING`, `ERROR`).                                                              |
 
-#### 💻 Example Command:
+#### 💻 Example Commands:
+
+**Individual heatmaps (default):**
 ```bash
 python occlusion_heatmaps_builder.py \
     --regular /path/to/regular_scores.csv \
@@ -204,6 +207,17 @@ python occlusion_heatmaps_builder.py \
     --output /path/to/output_heatmaps \
     --heatmap-mode diff \
     --multiprocessing --workers 12
+```
+
+**Average heatmap:**
+```bash
+python occlusion_heatmaps_builder.py \
+    --regular /path/to/regular_scores.csv \
+    --grid /path/to/grid_scores.csv \
+    --landmark /path/to/landmark_scores.csv \
+    --output /path/to/output_heatmaps \
+    --heatmap-mode diff \
+    --generated-heatmaps average
 ```
 ---
 

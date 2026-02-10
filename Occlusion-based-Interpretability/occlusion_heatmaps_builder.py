@@ -12,14 +12,24 @@ Key features:
 - Robust extraction of grid cell indices and landmark region names from file paths
 - Build per-image heatmaps and save overlays with matplotlib
 - Optional dlib-based landmark detection to map landmark regions to grid cells
+- Support for individual heatmaps (one per image) or averaged heatmaps (across all images)
 - Multiprocessing support
 
 Usage (examples):
+    # Generate individual heatmaps (default)
     python occlusion_heatmaps_builder.py \
         --regular /path/to/regular_scores.txt \
         --grid /path/to/grid_scores.txt \
         --landmark /path/to/landmark_scores.txt \
         --output /path/to/output
+
+    # Generate averaged heatmap
+    python occlusion_heatmaps_builder.py \
+        --regular /path/to/regular_scores.txt \
+        --grid /path/to/grid_scores.txt \
+        --landmark /path/to/landmark_scores.txt \
+        --output /path/to/output \
+        --generated-heatmaps average
 
 The parser is flexible but you can customize regex patterns via CLI flags.
 """
@@ -873,6 +883,151 @@ def overlay_landmark_heatmap_on_image(
 
 # --------------------------- Processing pipeline -----------------------------
 
+def generate_average_heatmaps(
+    base_images: List[Path],
+    regular_map: Dict[str, float],
+    grid_map: Dict[str, Dict[Tuple[int, int], float]],
+    landmark_map: Dict[str, Dict[str, float]],
+    heatmap_mode: str,
+    output_dir: Path,
+    shape_predictor: Path,
+    alpha: float,
+    colormap: str,
+) -> Dict[str, Any]:
+    """
+    Generate averaged heatmaps across all images by directly summing scores.
+    Much more efficient than computing full heatmaps per image.
+    """
+    logging.info("Computing average scores across all images...")
+
+    # Accumulators for raw scores
+    grid_score_sum: Dict[Tuple[int, int], float] = defaultdict(float)
+    grid_score_count: Dict[Tuple[int, int], int] = defaultdict(int)
+
+    landmark_score_sum: Dict[str, float] = defaultdict(float)
+    landmark_score_count: Dict[str, int] = defaultdict(int)
+
+    regular_score_sum = 0.0
+    regular_score_count = 0
+
+    example_img_path = None
+    example_img = None
+
+    # Sum all scores across images
+    for img_path in tqdm(base_images, desc="Summing scores"):
+        key = str(img_path.resolve())
+
+        # Sum grid scores
+        if key in grid_map:
+            for (r, c), score in grid_map[key].items():
+                grid_score_sum[(r, c)] += score
+                grid_score_count[(r, c)] += 1
+
+        # Sum landmark scores
+        if key in landmark_map:
+            for region, score in landmark_map[key].items():
+                landmark_score_sum[region] += score
+                landmark_score_count[region] += 1
+
+        # Sum regular scores
+        if key in regular_map:
+            regular_score_sum += regular_map[key]
+            regular_score_count += 1
+
+        # Store first valid image path
+        if example_img_path is None and key in regular_map:
+            example_img_path = img_path
+
+    if example_img_path is None:
+        logging.error("No valid images found for averaging!")
+        return {"ok": False, "error": "no valid images"}
+
+    # Load the example image
+    example_img = cv2.imread(str(example_img_path))
+    if example_img is None:
+        logging.error(f"Failed to load example image: {example_img_path}")
+        return {"ok": False, "error": "failed to load example image"}
+
+    logging.info(f"Using example image: {example_img_path}")
+
+    # Compute averages
+    avg_grid_scores = {cell: grid_score_sum[cell] / grid_score_count[cell]
+                       for cell in grid_score_sum.keys()}
+    avg_landmark_scores = {region: landmark_score_sum[region] / landmark_score_count[region]
+                           for region in landmark_score_sum.keys()}
+    avg_regular_score = regular_score_sum / regular_score_count if regular_score_count > 0 else None
+
+    logging.info(f"Averaged {len(avg_grid_scores)} grid cells, {len(avg_landmark_scores)} landmark regions, from {regular_score_count} images")
+
+    # Now build heatmaps from averaged scores (only once!)
+    refinement = 2
+    grid_M = None
+    landmark_M = None
+    combined_M = None
+    region_bboxes = None
+
+    grid_out = None
+    landmark_out = None
+    combined_out = None
+
+    if avg_grid_scores:
+        rows, cols = _determine_grid_shape(avg_grid_scores)
+        grid_M_occluded = build_grid_matrix(avg_grid_scores, (rows, cols))
+        grid_M_occluded = refine_grid_matrix(grid_M_occluded, refinement=refinement)
+        grid_M = adjust_matrix_to_heatmap_mode(grid_M_occluded, avg_regular_score, heatmap_mode)
+
+        grid_out = overlay_heatmap_on_image(
+            example_img, grid_M, heatmap_mode,
+            alpha=alpha, colormap=colormap, draw_grid=True, draw_mask=False,
+            out_path=output_dir / "grid" / "average_heatmap.png",
+            title="Average Grid Occlusion Heatmap",
+        )
+
+    if avg_landmark_scores:
+        # If we don't have a grid, assume 4x4 for baseline
+        if grid_M is None:
+            rows, cols = 4, 4
+            grid_M = np.zeros((rows, cols), dtype=np.float32)
+
+        landmark_M_occluded, region_bboxes = compute_landmark_grid(
+            example_img, avg_landmark_scores, shape_predictor, grid_size=(rows*refinement, cols*refinement)
+        )
+        landmark_M = adjust_matrix_to_heatmap_mode(
+            landmark_M_occluded,
+            avg_regular_score,
+            heatmap_mode,
+            mask=(landmark_M_occluded != 0)
+        )
+
+        landmark_out = overlay_landmark_heatmap_on_image(
+            example_img, landmark_M, region_bboxes, heatmap_mode,
+            alpha=alpha, colormap=colormap, draw_grid=False, draw_mask=True,
+            out_path=output_dir / "landmarks" / "average_heatmap.png",
+            title="Average Landmark Occlusion Heatmap",
+        )
+
+    # Generate combined heatmap only if we have both grid and landmark scores
+    if avg_grid_scores and avg_landmark_scores:
+        combined_M = combine_grid_and_landmarks(grid_M_occluded, landmark_M_occluded)
+        combined_M = adjust_matrix_to_heatmap_mode(combined_M, avg_regular_score, heatmap_mode)
+
+        combined_out = overlay_landmark_heatmap_on_image(
+            example_img, combined_M, region_bboxes, heatmap_mode,
+            alpha=alpha, colormap=colormap, draw_grid=True, draw_mask=False,
+            out_path=output_dir / "combined" / "average_heatmap.png",
+            title="Average Composite Heatmap (Grid + Landmark)",
+        )
+
+    return {
+        "ok": True,
+        "grid_out": str(grid_out) if grid_out else None,
+        "landmark_out": str(landmark_out) if landmark_out else None,
+        "combined_out": str(combined_out) if combined_out else None,
+        "num_images_averaged": regular_score_count,
+        "example_image": str(example_img_path),
+    }
+
+
 def _process_image_wrapper(args_tuple):
     """Top-level wrapper for multiprocessing."""
     return process_one_image(*args_tuple)
@@ -935,9 +1090,9 @@ def process_one_image(
             img_bgr, landmark_scores_map, shape_predictor, grid_size=(rows*refinement, cols*refinement)
         )
         landmark_M = adjust_matrix_to_heatmap_mode(
-            landmark_M_occluded, 
-            regular_score, 
-            heatmap_mode, 
+            landmark_M_occluded,
+            regular_score,
+            heatmap_mode,
             mask=(landmark_M_occluded != 0)
         )
 
@@ -948,6 +1103,8 @@ def process_one_image(
             title="Landmark Occlusion Heatmap",
         )
 
+    # Generate combined heatmap only if we have both grid and landmark scores
+    if grid_scores_map and landmark_scores_map:
         combined_M = combine_grid_and_landmarks(grid_M_occluded, landmark_M_occluded)
         combined_M = adjust_matrix_to_heatmap_mode(combined_M, regular_score, heatmap_mode)
 
@@ -997,6 +1154,12 @@ def main():
             "  diff     → show the difference abs(regular - occluded)"
         ),
     )
+    parser.add_argument("--generated-heatmaps", choices=["individual", "average"], default="individual", help=(
+            "Heatmap generation mode:\n"
+            "  individual → generate one heatmap per image (default)\n"
+            "  average    → generate a single averaged heatmap across all images"
+        ),
+    )
     parser.add_argument("--output", required=True, help="Output folder for overlays")
     parser.add_argument("--alpha", type=float, default=0.6, help="Overlay alpha")
     parser.add_argument("--colormap", default="hot", help="Matplotlib colormap name")
@@ -1031,37 +1194,57 @@ def main():
 
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    def _args_for_image(p: Path):
-        # Use the absolute path string as key directly
-        key = str(p.resolve())
-        return (
-            p,
-            regular_map.get(key, None),
-            grid_map.get(key, {}),
-            landmark_map.get(key, {}),
-            rel_map.get(key),
+    results: List[Dict[str, Any]] = []
+
+    # Handle different generation modes
+    if args.generated_heatmaps == "average":
+        logging.info("Generating average heatmaps across all images...")
+        avg_result = generate_average_heatmaps(
+            base_images,
+            regular_map,
+            grid_map,
+            landmark_map,
             args.heatmap_mode,
             output_dir,
             Path(shape_predictor),
             float(args.alpha),
             str(args.colormap)
         )
+        results.append(avg_result)
 
-    results: List[Dict[str, Any]] = []
-    if args.multiprocessing and len(base_images) > 1:
-        logging.info(f"Multiprocessing with {args.workers} workers...")
-        args_list = list(map(_args_for_image, base_images))
+    else:  # individual mode (default)
+        logging.info("Generating individual heatmaps for each image...")
 
-        with Pool(processes=args.workers) as pool:
-            for res in tqdm(
-                pool.imap_unordered(_process_image_wrapper, args_list),
-                total=len(args_list),
-                desc="Processing images",
-            ):
-                results.append(res)
-    else:
-        for p in tqdm(base_images, desc="Processing images"):
-            results.append(process_one_image(*_args_for_image(p)))
+        def _args_for_image(p: Path):
+            # Use the absolute path string as key directly
+            key = str(p.resolve())
+            return (
+                p,
+                regular_map.get(key, None),
+                grid_map.get(key, {}),
+                landmark_map.get(key, {}),
+                rel_map.get(key),
+                args.heatmap_mode,
+                output_dir,
+                Path(shape_predictor),
+                float(args.alpha),
+                str(args.colormap)
+            )
+
+        if args.multiprocessing and len(base_images) > 1:
+            logging.info(f"Multiprocessing with {args.workers} workers...")
+            args_list = list(map(_args_for_image, base_images))
+
+            with Pool(processes=args.workers) as pool:
+                for res in tqdm(
+                    pool.imap_unordered(_process_image_wrapper, args_list),
+                    total=len(args_list),
+                    desc="Processing images",
+                ):
+                    results.append(res)
+        else:
+            for p in tqdm(base_images, desc="Processing images"):
+                results.append(process_one_image(*_args_for_image(p)))
 
     # Save an index JSON
     index_path = output_dir / "overlays_index.json"
@@ -1070,7 +1253,12 @@ def main():
     end_time = time.time()
     elapsed = timedelta(seconds=end_time - start_time)
     logging.info("=== Done ===")
-    logging.info(f"Created overlays for {sum(1 for r in results if r.get('ok'))}/{len(results)} images")
+
+    if args.generated_heatmaps == "average":
+        logging.info(f"Generated average heatmaps from {len(base_images)} images")
+    else:
+        logging.info(f"Created overlays for {sum(1 for r in results if r.get('ok'))}/{len(results)} images")
+
     logging.info(f"Index JSON: {index_path}")
     logging.info(f"Elapsed: {elapsed}")
 
