@@ -223,7 +223,11 @@ For questions or collaboration opportunities, please send an email.
 If you use this work in your research, please cite:
 
 ```
-TBD
+@masterthesis{moraispedrojorgefernandes2026,
+	author	=	"Morais, Pedro Jorge Fernandes",
+	title	=	"Face morphing detection in identification documents",
+	year	=	"2026"
+}
 ```
 
 ---
